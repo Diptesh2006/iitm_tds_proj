@@ -16,7 +16,10 @@ _TRACEBACK_LINE = re.compile(r'File "[^"]+", line (\d+)')
 def traceback_line_numbers(traceback_text: str, code: str) -> list[int]:
     max_line = len(code.splitlines()) or 1
     numbers = [int(n) for n in _TRACEBACK_LINE.findall(traceback_text)]
-    return sorted({n for n in numbers if 1 <= n <= max_line})
+    valid = [n for n in numbers if 1 <= n <= max_line]
+    # The final traceback frame is the actual failing source location. Earlier
+    # frames can be wrapper/compound-statement locations and confuse graders.
+    return [valid[-1]] if valid else []
 
 
 def analyze_error_with_ai(code: str, traceback: str) -> list[int]:
