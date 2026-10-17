@@ -1,6 +1,7 @@
 import json, os, re
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal, ROUND_HALF_UP
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -27,6 +28,9 @@ def load_data():
 def usd(row, rates): return Decimal(str(row["amount"])) * rates[row["currency"]]
 def money(v): return float(v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 def words(q): return q.lower().replace("-", " ")
+def business_dt(row):
+    value = row["created_at"].replace("Z", "+00:00")
+    return datetime.fromisoformat(value).astimezone(ZoneInfo("Asia/Kolkata"))
 def filtered(q, rows):
     q = words(q); out = rows
     for field, pat in (("region", r"\b(north|south|east|west|central)\b"), ("product", r"\b(blender|toaster|kettle|mixer|juicer|grinder|rice cooker|air fryer)\b"), ("currency", r"\b(usd|eur|inr)\b")):
@@ -36,7 +40,9 @@ def filtered(q, rows):
     if cm: out = [x for x in out if x["customer"].lower() == cm.group(1)]
     months = {"january":1,"february":2,"march":3,"april":4,"may":5,"june":6,"july":7,"august":8,"september":9,"october":10,"november":11,"december":12}
     mm = re.search(r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+(20\d{2})", q)
-    if mm: out = [x for x in out if datetime.fromisoformat(x["created_at"].replace("Z", "+00:00")).year == int(mm.group(2)) and datetime.fromisoformat(x["created_at"].replace("Z", "+00:00")).month == months[mm.group(1)]]
+    if mm: out = [x for x in out if business_dt(x).year == int(mm.group(2)) and business_dt(x).month == months[mm.group(1)]]
+    elif (ym := re.search(r"\b(20\d{2})\b", q)) and ("year" in q or "during" in q):
+        out = [x for x in out if business_dt(x).year == int(ym.group(1))]
     return out
 
 @app.post("/")
@@ -53,6 +59,8 @@ def answer(req: Question):
         totals = defaultdict(Decimal)
         for x in selected: totals[x[key]] += usd(x, rates)
         return {"answer": max(totals, key=totals.get) if totals else None}
+    if "unit" in q or "quantity" in q:
+        return {"answer": sum(x["qty"] for x in selected)}
     if "distinct customer" in q or "unique customer" in q:
         return {"answer": len({x["customer"] for x in selected})}
     if "average" in q or "on average" in q or "avg" in q:
