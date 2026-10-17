@@ -53,5 +53,7 @@ def answer(req: Question):
         totals = defaultdict(Decimal)
         for x in selected: totals[x[key]] += usd(x, rates)
         return {"answer": max(totals, key=totals.get) if totals else None}
+    if "distinct customer" in q or "unique customer" in q:
+        return {"answer": len({x["customer"] for x in selected})}
     if "count" in q or "number of" in q: return {"answer": len(selected)}
     return {"answer": money(sum((usd(x, rates) for x in selected), Decimal(0)))}
