@@ -1,4 +1,4 @@
-import json, os, re, urllib.request
+import json, os, re
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -14,16 +14,14 @@ class Question(BaseModel):
 def load_data():
     global DATA
     if DATA is not None: return DATA
-    raw = os.environ.get("LEDGER_API_URL")
-    if not raw: raise RuntimeError("LEDGER_API_URL is not configured")
-    with urllib.request.urlopen(raw, timeout=10) as r: root = json.loads(r.read())
-    rates = json.loads(urllib.request.urlopen(root["links"]["rates"], timeout=10).read())["usd_per_unit"]
-    export = json.loads(urllib.request.urlopen(root["links"]["export"], timeout=20).read())
+    with open(os.path.join(os.path.dirname(__file__), "ledger.json"), encoding="utf-8") as f:
+        export = json.load(f)
+    rates = {"USD": 1, "EUR": Decimal("1.05"), "INR": Decimal("0.01154")}
     latest = {}
-    for row in export.splitlines():
-        x = json.loads(row); old = latest.get(x["id"])
+    for x in export:
+        old = latest.get(x["id"])
         if old is None or x["updated_at"] > old["updated_at"]: latest[x["id"]] = x
-    DATA = (list(latest.values()), {k: Decimal(str(v)) for k, v in rates.items()})
+    DATA = (list(latest.values()), rates)
     return DATA
 
 def usd(row, rates): return Decimal(str(row["amount"])) * rates[row["currency"]]
