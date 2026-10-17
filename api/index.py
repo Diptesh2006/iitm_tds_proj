@@ -33,7 +33,9 @@ def business_dt(row):
     return datetime.fromisoformat(value).astimezone(ZoneInfo("Asia/Kolkata"))
 def filtered(q, rows):
     q = words(q); out = rows
-    for field, pat in (("region", r"\b(north|south|east|west|central)\b"), ("product", r"\b(blender|toaster|kettle|mixer|juicer|grinder|rice cooker|air fryer)\b"), ("currency", r"\b(usd|eur|inr)\b")):
+    # Currency words describe the requested output currency; ledger amounts
+    # are always converted to USD and must not be filtered by source currency.
+    for field, pat in (("region", r"\b(north|south|east|west|central)\b"), ("product", r"\b(blender|toaster|kettle|mixer|juicer|grinder|rice cooker|air fryer)\b")):
         m = re.search(pat, q)
         if m: out = [x for x in out if x[field].lower() == m.group(1)]
     cm = re.search(r"(?:customer|client)\s*(?:id\s*)?(c\d+)", q)
