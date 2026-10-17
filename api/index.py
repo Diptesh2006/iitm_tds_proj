@@ -61,7 +61,9 @@ def answer(req: Question):
         return {"answer": max(totals, key=totals.get) if totals else None}
     if "unit" in q or "quantity" in q:
         return {"answer": sum(x["qty"] for x in selected)}
-    if "distinct customer" in q or "unique customer" in q:
+    if ("distinct customer" in q or "different customer" in q or
+            "unique customer" in q or "different customers" in q or
+            "distinct customers" in q or "unique customers" in q):
         return {"answer": len({x["customer"] for x in selected})}
     if "average" in q or "on average" in q or "avg" in q:
         total = sum((usd(x, rates) for x in selected), Decimal(0))
