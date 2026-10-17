@@ -70,5 +70,7 @@ def answer(req: Question):
     if "average" in q or "on average" in q or "avg" in q:
         total = sum((usd(x, rates) for x in selected), Decimal(0))
         return {"answer": money(total / len(selected)) if selected else 0.0}
-    if "count" in q or "number of" in q: return {"answer": len(selected)}
+    if ("count" in q or "number of" in q or "how many orders" in q or
+            "how many refunded" in q or "how many paid" in q):
+        return {"answer": len(selected)}
     return {"answer": money(sum((usd(x, rates) for x in selected), Decimal(0)))}
