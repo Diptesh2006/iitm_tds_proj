@@ -3,7 +3,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from decimal import Decimal, ROUND_HALF_UP
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import jwt
@@ -12,7 +12,7 @@ import yaml
 app = FastAPI()
 
 @app.get("/effective-config")
-def effective_config(set: list[str] = []):
+def effective_config(overrides: list[str] = Query(default=[], alias="set")):
     cfg = {"port": 8000, "workers": 1, "debug": False, "log_level": "info", "api_key": "default-secret-000"}
     path = os.path.join(os.path.dirname(__file__), "config.development.yaml")
     with open(path, encoding="utf-8") as f:
@@ -29,7 +29,7 @@ def effective_config(set: list[str] = []):
     # The assignment's OS layer values are used when no hosting env override exists.
     if "APP_PORT" not in os.environ: cfg["port"] = 8268
     if "APP_LOG_LEVEL" not in os.environ: cfg["log_level"] = "debug"
-    for item in set:
+    for item in overrides:
         if "=" in item:
             k, v = item.split("=", 1); cfg[k.strip()] = v
     cfg["port"] = int(cfg.get("port", 8000)); cfg["workers"] = int(cfg.get("workers", 1))
