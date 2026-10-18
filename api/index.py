@@ -3,10 +3,10 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from decimal import Decimal, ROUND_HALF_UP
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import jwt
 import yaml
 
@@ -14,9 +14,110 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "OPTIONS"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+
+class InvoiceText(BaseModel):
+    text: str
+
+
+class InvoiceFields(BaseModel):
+    vendor: str = Field(min_length=1)
+    amount: float = Field(ge=0)
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+@app.post("/extract", response_model=InvoiceFields)
+def extract_invoice(request: InvoiceText):
+    text = request.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Invoice text is empty")
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    vendor = None
+    for line in lines:
+        match = re.match(
+            r"(?i)^(?:vendor|supplier|seller|merchant|payee|bill(?:ed)? from|issued by|from)\s*[:\-]\s*(.+)$",
+            line,
+        )
+        if match:
+            vendor = match.group(1).strip().rstrip(",;")
+            break
+    if vendor is None:
+        match = re.search(
+            r"(?i)\b([A-Z][\w&.'-]*(?:\s+[A-Z][\w&.'-]*){0,5}\s+"
+            r"(?:Industries\s+)?(?:Ltd\.?|LLC|Inc\.?|Corp\.?|Company))(?=\s|$|[,;])",
+            text,
+        )
+        if match:
+            vendor = match.group(1)
+
+    iso_date = r"\b(20\d{2}-\d{2}-\d{2})\b"
+    due_date = None
+    for line in lines:
+        label_match = re.search(
+            r"(?i)\b(?:due\s*date|payment\s*due|pay\s*by|due\s*on|deadline)\b",
+            line,
+        )
+        if label_match:
+            match = re.search(iso_date, line[label_match.end():])
+            if match:
+                due_date = match.group(1)
+                break
+    if due_date is None:
+        match = re.search(iso_date, text)
+        if match:
+            due_date = match.group(1)
+
+    money_pattern = re.compile(
+        r"(?i)(?<![\w-])(?:(USD|EUR|GBP)\s*)?([$€£])?\s*"
+        r"(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)"
+        r"\s*(USD|EUR|GBP)?(?![\d-])"
+    )
+    amount_match = None
+    for label in (
+        r"(?:amount|balance|payment)\s+due",
+        r"total\s+(?:due|payable|amount)",
+        r"grand\s+total",
+        r"invoice\s+total",
+        r"total",
+    ):
+        for line in lines:
+            found = re.search(r"(?i)\b" + label + r"\b\s*[:=\-]?\s*(.*)$", line)
+            if found:
+                candidates = list(money_pattern.finditer(found.group(1)))
+                if candidates:
+                    amount_match = candidates[-1]
+                    break
+        if amount_match:
+            break
+    if amount_match is None:
+        candidates = [m for m in money_pattern.finditer(text)
+                      if m.group(1) or m.group(2) or m.group(4)]
+        if candidates:
+            amount_match = candidates[-1]
+
+    currency = None
+    if amount_match:
+        currency = amount_match.group(1) or amount_match.group(4)
+        if currency is None:
+            currency = {"$": "USD", "€": "EUR", "£": "GBP"}.get(amount_match.group(2))
+    if currency is None:
+        match = re.search(r"\b(USD|EUR|GBP)\b", text, re.I)
+        if match:
+            currency = match.group(1).upper()
+
+    try:
+        if not all((vendor, due_date, amount_match, currency)):
+            raise ValueError("Missing invoice field")
+        datetime.strptime(due_date, "%Y-%m-%d")
+        amount = float(Decimal(amount_match.group(3).replace(",", "")))
+        return InvoiceFields(vendor=vendor, amount=amount,
+                             currency=currency.upper(), date=due_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 @app.get("/effective-config")
 def effective_config(overrides: list[str] = Query(default=[], alias="set")):
