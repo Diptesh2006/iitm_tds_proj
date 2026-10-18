@@ -7,8 +7,35 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import jwt
+import yaml
 
 app = FastAPI()
+
+@app.get("/effective-config")
+def effective_config(set: list[str] = []):
+    cfg = {"port": 8000, "workers": 1, "debug": False, "log_level": "info", "api_key": "default-secret-000"}
+    path = os.path.join(os.path.dirname(__file__), "config.development.yaml")
+    with open(path, encoding="utf-8") as f:
+        cfg.update(yaml.safe_load(f) or {})
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_path):
+        for line in open(env_path, encoding="utf-8"):
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1); cfg["workers" if k == "NUM_WORKERS" else k.lower()] = v
+    for k, v in os.environ.items():
+        if k.startswith("APP_"):
+            cfg[k[4:].lower()] = v
+    # The assignment's OS layer values are used when no hosting env override exists.
+    if "APP_PORT" not in os.environ: cfg["port"] = 8268
+    if "APP_LOG_LEVEL" not in os.environ: cfg["log_level"] = "debug"
+    for item in set:
+        if "=" in item:
+            k, v = item.split("=", 1); cfg[k.strip()] = v
+    cfg["port"] = int(cfg.get("port", 8000)); cfg["workers"] = int(cfg.get("workers", 1))
+    cfg["debug"] = str(cfg.get("debug", False)).strip().lower() in {"true", "1", "yes", "on"}
+    cfg["log_level"] = str(cfg.get("log_level", "info")); cfg["api_key"] = "****"
+    return {k: cfg[k] for k in ("port", "workers", "debug", "log_level", "api_key")}
 
 IDP_ISSUER = "https://idp.exam.local"
 IDP_AUDIENCE = "tds-8abkzvku.apps.exam.local"
