@@ -4,12 +4,19 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from decimal import Decimal, ROUND_HALF_UP
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import jwt
 import yaml
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 @app.get("/effective-config")
 def effective_config(overrides: list[str] = Query(default=[], alias="set")):
